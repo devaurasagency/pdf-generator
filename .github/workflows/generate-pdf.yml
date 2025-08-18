@@ -11,7 +11,7 @@ jobs:
         uses: actions/checkout@v4
         
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: 18
           
@@ -64,86 +64,7 @@ jobs:
         run: node generate-pdf.js
           
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-pdf
-          path: output.pdf
-          
-      - name: Notify webhook
-        if: success()
-        run: |
-          if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
-            curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
-              -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
-              -F "pdf=@output.pdf" \
-              -F "status=success"
-          finame: Generate PDF
-on:
-  repository_dispatch:
-    types: [generate-pdf]
-
-jobs:
-  generate-pdf:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          
-      - name: Install dependencies
-        run: npm install puppeteer
-        
-      - name: Create PDF generation script
-        run: |
-          cat > generate-pdf.js << 'EOF'
-          const fs = require('fs');
-          const puppeteer = require('puppeteer');
-          
-          (async () => {
-            try {
-              // Get HTML from environment variable
-              const html = process.env.HTML_CONTENT;
-              
-              if (!html) {
-                console.error('No HTML content provided');
-                process.exit(1);
-              }
-              
-              const browser = await puppeteer.launch({
-                headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
-              });
-              
-              const page = await browser.newPage();
-              await page.setContent(html, { waitUntil: 'networkidle0' });
-              
-              const pdfBuffer = await page.pdf({
-                format: 'A4',
-                printBackground: true,
-                margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' }
-              });
-              
-              await browser.close();
-              fs.writeFileSync('output.pdf', pdfBuffer);
-              console.log('PDF generated successfully');
-            } catch (error) {
-              console.error('Error generating PDF:', error);
-              process.exit(1);
-            }
-          })();
-          EOF
-          
-      - name: Generate PDF
-        env:
-          HTML_CONTENT: ${{ github.event.client_payload.html_content }}
-        run: node generate-pdf.js
-          
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: generated-pdf
           path: output.pdf
