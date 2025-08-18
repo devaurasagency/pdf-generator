@@ -1,0 +1,56 @@
+name: Generate PDF
+on:
+  repository_dispatch:
+    types: [generate-pdf]
+
+jobs:
+  generate-pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          
+      - name: Install dependencies
+        run: npm install puppeteer
+        
+      - name: Generate PDF
+        id: pdf
+        run: |
+          const fs = require('fs');
+          const puppeteer = require('puppeteer');
+          
+          // Get HTML from event payload
+          const html = process.env.HTML_CONTENT;
+          
+          (async () => {
+            const browser = await puppeteer.launch();
+            const page = await browser.newPage();
+            await page.setContent(html, { waitUntil: 'networkidle0' });
+            
+            const pdfBuffer = await page.pdf({
+              format: 'A4',
+              printBackground: true,
+              margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' }
+            });
+            
+            await browser.close();
+            fs.writeFileSync('output.pdf', pdfBuffer);
+            console.log('PDF generated successfully');
+          })();
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: generated-pdf
+          path: output.pdf
+          
+      - name: Notify webhook
+        run: |
+          curl -X POST ${{ secrets.N8N_WEBHOOK_URL }} \
+            -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
+            -F "pdf=@output.pdf"
