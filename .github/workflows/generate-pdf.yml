@@ -14,9 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Debug payload
+        env:
+          EVENT_TYPE: ${{ github.event.action }}
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
         run: |
-          echo "Event type: ${{ github.event.action }}"
-          echo "Client payload: ${{ toJson(github.event.client_payload) }}"
+          echo "Event type: $EVENT_TYPE"
+          echo "Client payload: $CLIENT_PAYLOAD"
           
       - name: Checkout repo
         uses: actions/checkout@v4
