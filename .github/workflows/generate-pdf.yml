@@ -2,16 +2,27 @@ name: Generate PDF
 on:
   repository_dispatch:
     types: [generate-pdf]
+  workflow_dispatch:
+    inputs:
+      html_content:
+        description: 'HTML content to convert'
+        required: true
+        default: '<html><body><h1>Test</h1></body></html>'
 
 jobs:
   generate-pdf:
     runs-on: ubuntu-latest
     steps:
+      - name: Debug payload
+        run: |
+          echo "Event type: ${{ github.event.action }}"
+          echo "Client payload: ${{ toJson(github.event.client_payload) }}"
+          
       - name: Checkout repo
         uses: actions/checkout@v4
         
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
           
@@ -60,11 +71,11 @@ jobs:
           
       - name: Generate PDF
         env:
-          HTML_CONTENT: ${{ github.event.client_payload.html_content }}
+          HTML_CONTENT: ${{ github.event.client_payload.html_content || github.event.inputs.html_content }}
         run: node generate-pdf.js
           
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: generated-pdf
           path: output.pdf
