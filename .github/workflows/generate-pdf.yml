@@ -121,6 +121,7 @@ jobs:
       - name: Notify webhook
         if: success()
         run: |
+         FOLDER_ID="${{ github.event.client_payload.folder_id }}"
           if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
             curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
               -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
