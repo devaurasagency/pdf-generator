@@ -128,4 +128,4 @@ jobs:
           curl -X POST \
             -F "pdf=@output.pdf" \
             -F "status=success" \
-            "${{ github.event.inputs.callback_url }}"
+            "${{ github.event.callback_url }}"
