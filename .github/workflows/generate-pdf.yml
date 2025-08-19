@@ -25,6 +25,17 @@ jobs:
           echo "Event type: $EVENT_TYPE"
           echo "Client payload: $CLIENT_PAYLOAD"
           
+      - name: Extract callback URL
+        id: callback
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
+          else
+            CALLBACK_URL="${{ github.event.inputs.callback_url }}"
+          fi
+          echo "callback_url=$CALLBACK_URL" >> $GITHUB_OUTPUT
+          echo "Using callback URL: $CALLBACK_URL"
+          
       - name: Checkout repo
         uses: actions/checkout@v4
         
@@ -122,10 +133,55 @@ jobs:
           name: generated-pdf
           path: output.pdf
           
-      - name: Notify n8n resume URL
+      - name: Debug callback URL
+        run: |
+          echo "Callback URL: ${{ steps.callback.outputs.callback_url }}"
+          ls -la output.pdf
+          
+      - name: Upload PDF to temporary storage (optional)
+        if: success()
+        id: upload
+        run: |
+          # Option 1: Upload to GitHub as a release asset or artifact download URL
+          # Option 2: Upload to a temporary file service like file.io
+          echo "Uploading PDF to temporary storage..."
+          UPLOAD_RESPONSE=$(curl -F "file=@output.pdf" https://file.io)
+          PDF_URL=$(echo $UPLOAD_RESPONSE | jq -r '.link // empty')
+          
+          if [ -n "$PDF_URL" ]; then
+            echo "pdf_url=$PDF_URL" >> $GITHUB_OUTPUT
+            echo "PDF uploaded to: $PDF_URL"
+          else
+            echo "pdf_url=" >> $GITHUB_OUTPUT
+            echo "Failed to upload PDF"
+          fi
+          
+      - name: Notify n8n webhook (success)
         if: success()
         run: |
-          curl -X POST \
-            -F "pdf=@output.pdf" \
-            -F "status=success" \
-            "${{ github.event.client_payload.callback_url || github.event.inputs.callback_url }}"
+          echo "Sending success notification to: ${{ steps.callback.outputs.callback_url }}"
+          
+          if [ -n "${{ steps.upload.outputs.pdf_url }}" ]; then
+            # Send with PDF URL if upload succeeded
+            curl -v -X POST \
+              -H "Content-Type: application/json" \
+              -d "{\"status\":\"success\",\"message\":\"PDF generated successfully\",\"pdf_url\":\"${{ steps.upload.outputs.pdf_url }}\"}" \
+              "${{ steps.callback.outputs.callback_url }}"
+          else
+            # Fallback: try to send PDF directly
+            curl -v -X POST \
+              -H "Content-Type: multipart/form-data" \
+              -F "pdf=@output.pdf" \
+              -F "status=success" \
+              -F "message=PDF generated successfully" \
+              "${{ steps.callback.outputs.callback_url }}"
+          fi
+          
+      - name: Notify n8n webhook (failure)
+        if: failure()
+        run: |
+          echo "Sending failure notification to: ${{ steps.callback.outputs.callback_url }}"
+          curl -v -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"status":"error","message":"PDF generation failed"}' \
+            "${{ steps.callback.outputs.callback_url }}"
