@@ -21,6 +21,19 @@ jobs:
           echo "Event type: $EVENT_TYPE"
           echo "Client payload: $CLIENT_PAYLOAD"
           
+      - name: Extract callback URL
+        id: extract_callback
+        run: |
+          CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
+          if [ -z "$CALLBACK_URL" ]; then
+            echo "No callback URL provided"
+            echo "callback_available=false" >> $GITHUB_OUTPUT
+          else
+            echo "Callback URL: $CALLBACK_URL"
+            echo "callback_available=true" >> $GITHUB_OUTPUT
+            echo "callback_url=$CALLBACK_URL" >> $GITHUB_OUTPUT
+          fi
+          
       - name: Checkout repo
         uses: actions/checkout@v4
         
@@ -54,45 +67,21 @@ jobs:
               const browser = await chromium.launch();
               const page = await browser.newPage();
               
-              // Enhanced HTML wrapper with better styles
-              const wrappedHTML = `
-              <!DOCTYPE html>
-              <html>
-              <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <style>
-                      * { box-sizing: border-box; }
-                      body { 
-                          margin: 0; 
-                          padding: 20px; 
-                          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                          line-height: 1.6;
-                          color: #333;
-                          background: white;
-                      }
-                      img { max-width: 100%; height: auto; }
-                      table { width: 100%; border-collapse: collapse; }
-                      th, td { padding: 8px; text-align: left; }
-                  </style>
-              </head>
-              <body>
-                  ${html}
-              </body>
-              </html>
-              `;
-              
-              await page.setContent(wrappedHTML, { waitUntil: 'networkidle' });
+              await page.setContent(html, { 
+                waitUntil: 'networkidle',
+                timeout: 30000 
+              });
               
               const pdfBuffer = await page.pdf({
                 format: 'A4',
                 printBackground: true,
                 margin: { 
-                  top: '20mm', 
-                  right: '20mm', 
-                  bottom: '20mm', 
-                  left: '20mm' 
-                }
+                  top: '10mm', 
+                  right: '10mm', 
+                  bottom: '10mm', 
+                  left: '10mm' 
+                },
+                preferCSSPageSize: true
               });
               
               await browser.close();
@@ -111,19 +100,113 @@ jobs:
         env:
           HTML_CONTENT: ${{ github.event.client_payload.html_content || github.event.inputs.html_content }}
         run: node generate-pdf.js
+        
+      - name: Verify PDF exists
+        run: |
+          if [ -f output.pdf ]; then
+            echo "PDF file created successfully"
+            ls -la output.pdf
+          else
+            echo "ERROR: PDF file not found!"
+            exit 1
+          fi
+          
+      - name: Upload to GitHub Release (if tag exists) or Artifact
+        id: upload_pdf
+        run: |
+          # Generate a unique filename
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          FILENAME="credentials_report_${TIMESTAMP}.pdf"
+          mv output.pdf "$FILENAME"
+          
+          echo "Generated filename: $FILENAME"
+          echo "filename=$FILENAME" >> $GITHUB_OUTPUT
+          
+          # For now, we'll use GitHub artifacts
+          # You can extend this to upload to cloud storage later
+          echo "PDF ready for download"
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: generated-pdf
-          path: output.pdf
+          name: ${{ steps.upload_pdf.outputs.filename }}
+          path: ${{ steps.upload_pdf.outputs.filename }}
+          retention-days: 7
           
-      - name: Notify webhook
-        if: success()
+      # Method 1: Try direct file upload to n8n (if webhook supports file uploads)
+      - name: Send callback with file (Method 1)
+        if: steps.extract_callback.outputs.callback_available == 'true'
+        continue-on-error: true
+        id: callback_method1
         run: |
-          if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
-            curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
-              -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
-              -F "pdf=@output.pdf" \
-              -F "status=success"
-          fi
+          CALLBACK_URL="${{ steps.extract_callback.outputs.callback_url }}"
+          FILENAME="${{ steps.upload_pdf.outputs.filename }}"
+          
+          echo "Attempting to send PDF file directly to: $CALLBACK_URL"
+          
+          curl -X POST "$CALLBACK_URL" \
+            -H "Content-Type: multipart/form-data" \
+            -F "status=success" \
+            -F "filename=$FILENAME" \
+            -F "execution_id=${{ github.event.client_payload.execution_id }}" \
+            -F "project_name=${{ github.event.client_payload.project_name }}" \
+            -F "generated_at=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
+            -F "data=@$FILENAME" \
+            --max-time 30 \
+            --retry 2 \
+            -v || echo "Method 1 failed, will try method 2"
+            
+      # Method 2: Send JSON callback with artifact info (fallback)
+      - name: Send callback with artifact info (Method 2)  
+        if: steps.extract_callback.outputs.callback_available == 'true' && (failure() || steps.callback_method1.outcome == 'failure')
+        run: |
+          CALLBACK_URL="${{ steps.extract_callback.outputs.callback_url }}"
+          FILENAME="${{ steps.upload_pdf.outputs.filename }}"
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          echo "Sending callback with artifact information to: $CALLBACK_URL"
+          
+          curl -X POST "$CALLBACK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "status": "success",
+              "filename": "'"$FILENAME"'",
+              "artifact_url": "'"$ARTIFACT_URL"'",
+              "download_instructions": "Download from GitHub Actions artifacts",
+              "execution_id": "${{ github.event.client_payload.execution_id }}",
+              "project_name": "${{ github.event.client_payload.project_name }}",
+              "generated_at": "'$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)'",
+              "message": "PDF generated successfully. Please download from GitHub Actions artifacts."
+            }' \
+            --max-time 30 \
+            --retry 3 \
+            -v
+            
+      # Method 3: Upload to temporary storage and send URL (if you have cloud storage)
+      # Uncomment and configure if you want to use cloud storage
+      # - name: Upload to cloud storage (Method 3)
+      #   if: steps.extract_callback.outputs.callback_available == 'true'
+      #   run: |
+      #     # Upload to your cloud storage (AWS S3, Google Cloud Storage, etc.)
+      #     # aws s3 cp "${{ steps.upload_pdf.outputs.filename }}" s3://your-bucket/
+      #     # Then send the public URL in the callback
+            
+      - name: Handle callback failure
+        if: failure() && steps.extract_callback.outputs.callback_available == 'true'
+        run: |
+          CALLBACK_URL="${{ steps.extract_callback.outputs.callback_url }}"
+          
+          echo "Sending failure callback to: $CALLBACK_URL"
+          
+          curl -X POST "$CALLBACK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "status": "error",
+              "error": "PDF generation failed",
+              "execution_id": "${{ github.event.client_payload.execution_id }}",
+              "project_name": "${{ github.event.client_payload.project_name }}",
+              "generated_at": "'$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)'",
+              "github_run_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }' \
+            --max-time 30 \
+            -v || echo "Failed to send error callback"
