@@ -127,4 +127,5 @@ jobs:
               -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
               -F "pdf=@output.pdf" \
               -F "status=success"
+              -F "folder_id=$FOLDER_ID" \
           fi
