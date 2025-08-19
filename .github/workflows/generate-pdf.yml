@@ -121,9 +121,7 @@ jobs:
       - name: Notify webhook
         if: success()
         run: |
-          if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
-            curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
-              -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
+           curl -X POST \
               -F "pdf=@output.pdf" \
-              -F "status=success"
-          fi
+              -F "status=success" \
+              "${{ github.event.inputs.callback_url }}"
