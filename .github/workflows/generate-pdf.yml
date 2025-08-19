@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       html_content:
-        description: 'HTML content to convert'
+        description: "HTML content to convert"
         required: true
-        default: '<html><body><h1>Test</h1></body></html>'
+        default: "<html><body><h1>Test</h1></body></html>"
 
 jobs:
   generate-pdf:
@@ -20,26 +20,26 @@ jobs:
         run: |
           echo "Event type: $EVENT_TYPE"
           echo "Client payload: $CLIENT_PAYLOAD"
-          
+
       - name: Checkout repo
         uses: actions/checkout@v4
-        
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          
+
       - name: Install Playwright
         run: |
           npm install playwright
           npx playwright install chromium
-          
+
       - name: Create PDF generation script
         run: |
           cat > generate-pdf.js << 'EOF'
           const fs = require('fs');
           const { chromium } = require('playwright');
-          
+
           (async () => {
             try {
               const html = process.env.HTML_CONTENT;
@@ -106,18 +106,18 @@ jobs:
             }
           })();
           EOF
-          
+
       - name: Generate PDF
         env:
           HTML_CONTENT: ${{ github.event.client_payload.html_content != null && github.event.client_payload.html_content || github.event.inputs.html_content }}
         run: node generate-pdf.js
-          
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: generated-pdf
           path: output.pdf
-          
+
       - name: Notify webhook
         if: success()
         run: |
@@ -129,7 +129,7 @@ jobs:
               -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
               -F "pdf=@output.pdf" \
               -F "status=success" \
-              -F "Client_Name=$CLIENT_NAME"
-              -F "Client_Project=$CLIENT_PROJECT"
-              -F "Client_Email=$CLIENT_EMAIL"
+              -F "Client_Name=$CLIENT_NAME" \
+              -F "Client_Project=$CLIENT_PROJECT" \
+              -F "Client_Email=$CLIENT_EMAIL" \
           fi
