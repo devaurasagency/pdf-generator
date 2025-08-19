@@ -109,7 +109,7 @@ jobs:
           
       - name: Generate PDF
         env:
-          HTML_CONTENT: ${{ github.event.client_payload.html_content || github.event.inputs.html_content }}
+          HTML_CONTENT: ${{ github.event.client_payload.html_content != null && github.event.client_payload.html_content || github.event.inputs.html_content }}
         run: node generate-pdf.js
           
       - name: Upload artifact
@@ -121,11 +121,11 @@ jobs:
       - name: Notify webhook
         if: success()
         run: |
-         FOLDER_ID="${{ github.event.client_payload.folder_id }}"
+          FOLDER_ID="${{ github.event.client_payload.folder_id }}"
           if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
             curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
               -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
               -F "pdf=@output.pdf" \
-              -F "status=success"
-              -F "folder_id=$FOLDER_ID" \
+              -F "status=success" \
+              -F "folder_id=$FOLDER_ID"
           fi
