@@ -1,4 +1,5 @@
 name: Generate PDF
+
 on:
   repository_dispatch:
     types: [generate-pdf]
@@ -119,18 +120,18 @@ jobs:
           path: output.pdf
 
       - name: Notify webhook
-  if: success()
-  run: |
-    CLIENT_NAME="${{ github.event.client_payload.Client_Name }}"
-    CLIENT_PROJECT="${{ github.event.client_payload.Client_Project }}"
-    CLIENT_EMAIL="${{ github.event.client_payload.Client_Email }}"
+        if: success()
+        run: |
+          CLIENT_NAME="${{ github.event.client_payload.Client_Name }}"
+          CLIENT_PROJECT="${{ github.event.client_payload.Client_Project }}"
+          CLIENT_EMAIL="${{ github.event.client_payload.Client_Email }}"
 
-    if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
-      curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
-        -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
-        -F "pdf=@output.pdf" \
-        -F "status=success" \
-        -F "Client_Name=$CLIENT_NAME" \
-        -F "Client_Project=$CLIENT_PROJECT" \
-        -F "Client_Email=$CLIENT_EMAIL"
-    fi
+          if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
+            curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
+              -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
+              -F "pdf=@output.pdf" \
+              -F "status=success" \
+              -F "Client_Name=$CLIENT_NAME" \
+              -F "Client_Project=$CLIENT_PROJECT" \
+              -F "Client_Email=$CLIENT_EMAIL"
+          fi
