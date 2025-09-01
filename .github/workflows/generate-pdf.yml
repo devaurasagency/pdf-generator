@@ -152,6 +152,7 @@ jobs:
           CLIENT_NAME="${{ steps.client_info.outputs.client_name }}"
           CLIENT_PROJECT="${{ github.event.client_payload.Client_Project }}"
           CLIENT_EMAIL="${{ github.event.client_payload.Client_Email }}"
+          CLIENT_ID="${{ github.event.client_payload.Client_Id }}"
           PDF_FILENAME="${{ steps.client_info.outputs.pdf_filename }}"
 
           if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
@@ -162,5 +163,6 @@ jobs:
               -F "Client_Name=$CLIENT_NAME" \
               -F "Client_Project=$CLIENT_PROJECT" \
               -F "Client_Email=$CLIENT_EMAIL" \
+              -F "Client_Id=$CLIENT_ID" \
               -F "PDF_Filename=$PDF_FILENAME"
           fi
