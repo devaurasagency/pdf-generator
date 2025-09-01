@@ -9,6 +9,10 @@ on:
         description: "HTML content to convert"
         required: true
         default: "<html><body><h1>Test</h1></body></html>"
+      client_name:
+        description: "Client name for PDF filename"
+        required: false
+        default: "DefaultClient"
 
 jobs:
   generate-pdf:
@@ -21,6 +25,26 @@ jobs:
         run: |
           echo "Event type: $EVENT_TYPE"
           echo "Client payload: $CLIENT_PAYLOAD"
+
+      - name: Set client name
+        id: client_info
+        run: |
+          # Get client name from payload or manual input
+          CLIENT_NAME="${{ github.event.client_payload.Client_Name != null && github.event.client_payload.Client_Name || github.event.inputs.client_name || 'DefaultClient' }}"
+          
+          # Sanitize client name for filename (remove special characters, spaces, etc.)
+          SANITIZED_NAME=$(echo "$CLIENT_NAME" | sed 's/[^a-zA-Z0-9._-]/_/g')
+          
+          # Create the PDF filename
+          PDF_FILENAME="Rapport_Identifiants_Client_${SANITIZED_NAME}.pdf"
+          
+          echo "client_name=$CLIENT_NAME" >> $GITHUB_OUTPUT
+          echo "sanitized_name=$SANITIZED_NAME" >> $GITHUB_OUTPUT
+          echo "pdf_filename=$PDF_FILENAME" >> $GITHUB_OUTPUT
+          
+          echo "Client Name: $CLIENT_NAME"
+          echo "Sanitized Name: $SANITIZED_NAME"
+          echo "PDF Filename: $PDF_FILENAME"
 
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -44,6 +68,7 @@ jobs:
           (async () => {
             try {
               const html = process.env.HTML_CONTENT;
+              const outputFilename = process.env.PDF_FILENAME || 'output.pdf';
               
               if (!html) {
                 console.error('No HTML content provided');
@@ -51,6 +76,7 @@ jobs:
               }
               
               console.log('HTML content length:', html.length);
+              console.log('Output filename:', outputFilename);
               
               const browser = await chromium.launch();
               const page = await browser.newPage();
@@ -98,8 +124,8 @@ jobs:
               
               await browser.close();
               
-              fs.writeFileSync('output.pdf', pdfBuffer);
-              console.log('PDF generated successfully, size:', pdfBuffer.length, 'bytes');
+              fs.writeFileSync(outputFilename, pdfBuffer);
+              console.log('PDF generated successfully:', outputFilename, 'size:', pdfBuffer.length, 'bytes');
               
             } catch (error) {
               console.error('Error generating PDF:', error);
@@ -111,27 +137,30 @@ jobs:
       - name: Generate PDF
         env:
           HTML_CONTENT: ${{ github.event.client_payload.html_content != null && github.event.client_payload.html_content || github.event.inputs.html_content }}
+          PDF_FILENAME: ${{ steps.client_info.outputs.pdf_filename }}
         run: node generate-pdf.js
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: generated-pdf
-          path: output.pdf
+          name: ${{ steps.client_info.outputs.pdf_filename }}
+          path: ${{ steps.client_info.outputs.pdf_filename }}
 
       - name: Notify webhook
         if: success()
         run: |
-          CLIENT_NAME="${{ github.event.client_payload.Client_Name }}"
+          CLIENT_NAME="${{ steps.client_info.outputs.client_name }}"
           CLIENT_PROJECT="${{ github.event.client_payload.Client_Project }}"
           CLIENT_EMAIL="${{ github.event.client_payload.Client_Email }}"
+          PDF_FILENAME="${{ steps.client_info.outputs.pdf_filename }}"
 
           if [ -n "${{ secrets.N8N_WEBHOOK_URL }}" ]; then
             curl -X POST "${{ secrets.N8N_WEBHOOK_URL }}" \
               -H "Authorization: Bearer ${{ secrets.N8N_WEBHOOK_SECRET }}" \
-              -F "pdf=@output.pdf" \
+              -F "pdf=@$PDF_FILENAME" \
               -F "status=success" \
               -F "Client_Name=$CLIENT_NAME" \
               -F "Client_Project=$CLIENT_PROJECT" \
-              -F "Client_Email=$CLIENT_EMAIL"
+              -F "Client_Email=$CLIENT_EMAIL" \
+              -F "PDF_Filename=$PDF_FILENAME"
           fi
